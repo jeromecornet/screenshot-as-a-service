@@ -8,41 +8,48 @@ module.exports = function(app, useCors) {
   var rasterizerService = app.settings.rasterizerService;
   var fileCleanerService = app.settings.fileCleanerService;
 
-  // routes
-  app.get('/', function(req, res, next) {
-    if (!req.param('url', false)) {
-      return res.redirect('/usage.html');
-    }
-
-    var url = utils.url(req.param('url'));
-    // required options
-    var options = {
-      uri: 'http://localhost:' + rasterizerService.getPort() + '/',
-      headers: { url: url }
-    };
-    ['width', 'height', 'clipRect', 'javascriptEnabled', 'loadImages', 'localToRemoteUrlAccessEnabled', 'userAgent', 'userName', 'password', 'delay'].forEach(function(name) {
-      if (req.param(name, false)) options.headers[name] = req.param(name);
-    });
-
-    var filename = 'screenshot_' + utils.md5(url + JSON.stringify(options)) + '.png';
-    options.headers.filename = filename;
-
-    var filePath = join(rasterizerService.getPath(), filename);
-
-    var callbackUrl = req.param('callback', false) ? utils.url(req.param('callback')) : false;
-
-    if (fs.existsSync(filePath)) {
-      console.log('Request for %s - Found in cache', url);
-      processImageUsingCache(filePath, res, callbackUrl, function(err) { if (err) next(err); });
-      return;
-    }
-    console.log('Request for %s - Rasterizing it', url);
-    processImageUsingRasterizer(options, filePath, res, callbackUrl, function(err) { if(err) next(err); });
+  app.get('/:geometry/:url',function(req, res, next) {
+      geo = req.param('geometry').split('x')
+      res.redirect(req.protocol+'://'+req.host+'/image.png?width='+geo[0]+'&height='+geo[1]+'&timestamp='+Math.floor(new Date().getTime()/1000)+'&url='+req.param('url'));
   });
+
+  app.get('/image.png', function(req, res, next) {
+      if (!req.param('url', false)) {
+          return res.redirect('/usage.html');
+      }
+
+      var url = utils.url(req.param('url'));
+      // required options
+      var options = {
+          uri: 'http://localhost:' + rasterizerService.getPort() + '/',
+          headers: { url: url }
+      };
+      ['width', 'height', 'clipRect', 'javascriptEnabled', 'loadImages', 'localToRemoteUrlAccessEnabled', 'userAgent', 'userName', 'password', 'delay'].forEach(function(name) {
+          if (req.param(name, false)) options.headers[name] = req.param(name);
+      });
+
+      var filename = 'screenshot_' + utils.md5(url + JSON.stringify(options)) +req.param('timestamp','')+'.png';
+      options.headers.filename = filename;
+
+      var filePath = join(rasterizerService.getPath(), filename);
+
+      var callbackUrl = req.param('callback', false) ? utils.url(req.param('callback')) : false;
+
+      if (fs.existsSync(filePath) && req.param('timestamp', false)) {
+          console.log('Request for %s - Found in cache', url);
+          processImageUsingCache(filePath, res, callbackUrl, function(err) { if (err) next(err); });
+          return;
+      }
+
+      console.log('Request for %s - Rasterizing it', url);
+      processImageUsingRasterizer(options, filePath, res, callbackUrl, function(err) { if(err) next(err); });
+  });
+
+
 
   app.get('*', function(req, res, next) {
     // for backwards compatibility, try redirecting to the main route if the request looks like /www.google.com
-    res.redirect('/?url=' + req.url.substring(1));
+    res.redirect('/image.png?url=' + req.url.substring(1));
   });
 
   // bits of logic
